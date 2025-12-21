@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gift Tracker</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.png">
+</head>
+<body>
+
+    <header id="mainHeader" class="hide-in-home">
+        <button id="backBtn" class="back-btn hidden">←</button>
+        <h1 id="pageTitle">Gift Tracker</h1>
+        <div style="width:24px;"></div>
+    </header>
+
+    <div id="errorMsg"></div>
+
+    <div id="typeModal" class="modal-overlay">
+        <div class="modal-box">
+            <h3>Che tipo di evento è?</h3>
+            <p style="color:#666; font-size:14px; margin-bottom:20px;">Scegli come vuoi registrare i regali.</p>
+            <button onclick="window.goToSingle()" style="width:100%; padding:15px; background:var(--primary); color:white; border:none; border-radius:12px; font-weight:bold; margin-bottom:10px; display:flex; align-items:center; justify-content:center; gap:10px;">🎁 REGALO SINGOLO <br><span style="font-size:10px; font-weight:normal;">(Es. Compleanno)</span></button>
+            <button onclick="window.goToGroup()" style="width:100%; padding:15px; background:#2d3436; color:white; border:none; border-radius:12px; font-weight:bold; display:flex; align-items:center; justify-content:center; gap:10px;">🎄 GRUPPO REGALI <br><span style="font-size:10px; font-weight:normal;">(Es. Natale)</span></button>
+            <button onclick="document.getElementById('typeModal').style.display='none'" style="margin-top:15px; background:none; border:none; color:#999;">Annulla</button>
+        </div>
+    </div>
+
+    <div id="addSenderModal" class="modal-overlay">
+        <div class="modal-box">
+            <h3>Aggiungi Persona</h3>
+            <p style="color:#666; font-size:13px;">Chi altro partecipa al regalo?</p>
+            <input type="text" id="extraPersonInput" list="peopleDatalist" placeholder="Cerca in rubrica..." autocomplete="off">
+            <input type="hidden" id="targetInputId">
+            <button onclick="window.confirmAddSender()" style="width:100%; padding:12px; background:var(--primary); color:white; border:none; border-radius:10px; font-weight:bold;">Aggiungi</button>
+            <button onclick="document.getElementById('addSenderModal').style.display='none'" style="margin-top:15px; background:none; border:none; color:#999;">Annulla</button>
+        </div>
+    </div>
+
+    <div id="homePage" class="section active">
+        <div id="btnRed" class="click-zone" onclick="window.navTo('fatti_categorie')"></div>
+        <div id="btnBlue" class="click-zone" onclick="window.navTo('ricevuti_famiglia')"></div>
+    </div>
+
+    <div id="familyPage" class="section">
+        <h2>Chi ha ricevuto?</h2>
+        <div id="familyListContainer" style="display: grid; grid-template-columns: 1fr; gap: 8px; margin-top:15px;"></div>
+        <button onclick="window.promptAddFamilyMember()" style="margin-top:15px; width:100%; padding:12px; border:2px dashed #ccc; background:none; border-radius:12px; color:#888;">+ Aggiungi Membro</button>
+    </div>
+
+    <div id="categoriesPage" class="section">
+        <h2 id="catPageTitle">Scegli Occasione</h2>
+        <div id="unifiedCatList" class="cat-list-container"></div>
+        <button onclick="window.createCustomCategory()" style="margin-top:15px; width:100%; padding:12px; background:var(--text-main); color:white; border:none; border-radius:12px;">➕ Nuova Categoria</button>
+    </div>
+
+    <div id="eventsListPage" class="section">
+        <button class="action-btn" onclick="window.openTypeModal()">+ Nuovo in <span id="currentCatName"></span></button>
+        <div id="eventsListContainer" style="margin-top: 15px; padding-bottom:50px;"></div>
+    </div>
+
+    <div id="createEventPage" class="section">
+        <h2>Nuovo Gruppo</h2>
+        <form onsubmit="window.handleSaveEventContainer(event)">
+            <input type="hidden" id="eventIdHidden">
+            <label>Nome Gruppo</label>
+            <input type="text" id="eventNameInput" required>
+            <label>Data</label>
+            <input type="date" id="eventDateInput" required>
+            <button type="submit" class="action-btn">Salva Gruppo</button>
+        </form>
+    </div>
+
+    <div id="quickGiftPage" class="section">
+        <h2>Regalo Diretto</h2>
+        <form onsubmit="return false;">
+            <input type="hidden" id="quickEventIdHidden">
+            <label>Nome Evento</label>
+            <input type="text" id="quickEventName" required>
+            <label>Data Evento</label>
+            <input type="date" id="quickDateInput" required>
+            <hr style="margin:15px 0; border:0; border-top:1px dashed #ccc;">
+            <label>Da parte di:</label>
+            <div style="display:flex; gap:5px;">
+                <input type="text" id="quickSender" list="peopleDatalist" placeholder="Chi regala?" oninput="window.autoSelectRelation(this.value, 'quickRelation')">
+                <button onclick="window.openAddSenderModal('quickSender')" style="width:40px; background:#eee; border:none; border-radius:10px;">+</button>
+            </div>
+            <label>Per (Destinatario):</label>
+            <div style="display:flex; gap:5px;">
+                <input type="text" id="quickPerson" list="peopleDatalist" placeholder="Chi riceve?" required autocomplete="off" oninput="window.autoSelectRelation(this.value, 'quickRelation')">
+                <select id="quickRelation" style="width:110px;"></select>
+            </div>
+            <datalist id="peopleDatalist"></datalist>
+            <label>Cosa?</label>
+            <input type="text" id="quickDesc" placeholder="Es. Orologio" required>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <select id="quickType"><option value="Oggetto">🎁 Oggetto</option><option value="Busta">✉️ Busta</option><option value="Buono">🎫 Buono</option></select>
+                <input type="number" id="quickAmount" step="0.01" placeholder="€">
+            </div>
+            <label>Tag Regalo</label>
+            <select id="quickTag"></select>
+            <div class="btn-group">
+                <button class="action-btn" onclick="window.handleQuickGift(false)">Salva</button>
+                <button class="btn-secondary" onclick="window.handleQuickGift(true)">Salva + Altro</button>
+            </div>
+        </form>
+    </div>
+
+    <div id="singleEventPage" class="section">
+        <div style="background:var(--card-bg); padding:15px; border-radius:12px; margin-bottom:15px; border:1px solid #eee;">
+            <h2 id="detailEventName" style="margin:0;">...</h2>
+            <p id="detailEventInfo" style="margin:5px 0 0 0; color:#888; font-size:12px;">...</p>
+        </div>
+        <button class="action-btn" onclick="window.navTo('aggiungi_regalo')">+ Aggiungi Regalo</button>
+        <h3 style="margin-top:20px;">Lista Regali</h3>
+        <div id="giftsContainer" style="padding-bottom:50px;"></div>
+    </div>
+
+    <div id="addGiftPage" class="section">
+        <h2 id="giftFormTitle">Nuovo Regalo</h2>
+        <p id="giftEventNameDisplay" style="color:#888; font-size:13px; margin-bottom:15px;"></p>
+        <form onsubmit="return false;">
+            <input type="hidden" id="giftIdHidden">
+            <label>Da parte di:</label>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="giftSender" list="peopleDatalist" placeholder="..." oninput="window.autoSelectRelation(this.value, 'giftRelation')">
+                <button onclick="window.openAddSenderModal('giftSender')" style="width:40px; background:#eee; border:none; border-radius:10px;">+</button>
+            </div>
+            <label>Per:</label>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="giftPerson" list="peopleDatalist" placeholder="..." required autocomplete="off" oninput="window.autoSelectRelation(this.value, 'giftRelation')">
+                <select id="giftRelation" style="width:110px;"></select>
+            </div>
+            <label>Cosa?</label>
+            <input type="text" id="giftDesc" placeholder="...">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <select id="giftType"><option value="Oggetto">🎁 Oggetto</option><option value="Busta">✉️ Busta</option><option value="Buono">🎫 Buono</option></select>
+                <input type="number" id="giftAmount" step="0.01" placeholder="€">
+            </div>
+            <label>Tag</label>
+            <select id="giftTag"></select>
+            <label>Foto</label>
+            <input type="file" id="giftFileInput" accept="image/*" onchange="window.handleFileSelect(event)">
+            <input type="hidden" id="giftFileBase64">
+            <img id="imgPreview" class="img-preview" style="display:none">
+            <label>Note</label>
+            <textarea id="giftNotes" rows="2"></textarea>
+            <div class="btn-group">
+                <button class="action-btn" onclick="window.handleSaveGift(false)">Salva</button>
+                <button class="btn-secondary" onclick="window.handleSaveGift(true)">Salva + Altro</button>
+            </div>
+        </form>
+    </div>
+
+    <div id="peoplePage" class="section">
+        <h2>Rubrica</h2>
+        
+        <input type="text" id="searchPeopleInput" class="search-input" placeholder="🔍 Cerca contatto..." oninput="window.filterPeople()" style="margin-bottom:15px;">
+
+        <div class="card" style="background:var(--input-bg); border:none; box-shadow:none;">
+            <label style="font-size:12px;">Nuova Persona:</label>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="newPersonName" placeholder="Nome..." style="margin:0;">
+                <select id="newPersonRelation" style="margin:0; width:110px;"></select>
+            </div>
+            <button onclick="window.addPerson()" style="background:#2d3436; color:white; border:none; padding:12px; width:100%; margin-top:10px; border-radius:10px; font-weight:bold;">Aggiungi</button>
+        </div>
+        <div id="peopleListContainer"></div>
+    </div>
+
+    <div id="personDetailPage" class="section">
+        <h2 id="personDetailTitle">...</h2>
+        <div class="stat-box">
+            <div style="color:#888; font-size:11px; text-transform:uppercase;">Bilancio Storico</div>
+            <div id="personBalance" class="stat-num" style="color:var(--primary);">€ 0</div>
+        </div>
+        <div style="margin-top:15px; display:flex; gap:10px;">
+            <button class="btn-secondary" onclick="window.togglePersonView('fatti')" style="background:#FF9A9E; color:white;">🎁 Fatti da...</button>
+            <button class="btn-secondary" onclick="window.togglePersonView('ricevuti')" style="background:#a18cd1; color:white;">📥 Ricevuti da...</button>
+        </div>
+        <div id="histFattiContainer" style="margin-top:15px;"><h3>Regali che HA FATTO</h3><div id="personGiftsMade"></div></div>
+        <div id="histRicevutiContainer" style="margin-top:15px; display:none;"><h3>Regali che HA RICEVUTO</h3><div id="personGiftsReceived"></div></div>
+    </div>
+
+    <div id="settingsPage" class="section">
+        <h2>Opzioni</h2>
+        <div class="card">
+            <h3>🏷️ Tag</h3>
+            <div id="tagsList" style="margin-bottom:10px;"></div>
+            <button onclick="window.promptAddTag('gift')" style="padding:10px; width:100%;">+ Tag Regalo</button>
+            <hr style="margin:10px 0; border:0; border-top:1px dashed #ccc;">
+            <div id="peopleTagsList" style="margin-bottom:10px;"></div>
+            <button onclick="window.promptAddTag('person')" style="padding:10px; width:100%;">+ Tag Persona</button>
+        </div>
+        <div class="card">
+            <h3>🎨 Grafica</h3>
+            <button onclick="window.toggleTheme()" class="action-btn" style="background:#555; padding:10px; font-size:14px;">Cambia Tema 🌓</button>
+        </div>
+        <div class="card">
+            <h3>💾 Dati</h3>
+            <button onclick="window.exportData()" style="padding:10px; width:100%; margin-bottom:5px;">📥 Esporta Backup</button>
+            <button onclick="document.getElementById('importFile').click()" style="padding:10px; width:100%;">📤 Ripristina</button>
+            <input type="file" id="importFile" style="display:none" onchange="window.importData(event)" accept=".json">
+        </div>
+        <div class="card" style="background:#ffebee;">
+            <h3 style="color:#d63031;">⚠️ Reset App</h3>
+            <button onclick="window.wipeDatabase()" style="background:#d63031; color:white; width:100%; padding:12px; border:none; border-radius:10px; font-weight:bold;">CANCELLA TUTTO</button>
+        </div>
+        <p style="text-align:center; font-size:11px; color:#999; margin-top:20px;">DB: <span id="dbStatus">...</span></p>
+    </div>
+
+    <div id="analysisPage" class="section">
+        <h2>Analisi</h2>
+        <div style="display:flex; gap:10px; margin-bottom:15px;">
+            <select id="analysisYear"><option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option></select>
+            <button onclick="window.calculateAnalysis()" style="padding:10px; border-radius:10px; background:var(--text-main); color:white; border:none;">Vai</button>
+        </div>
+        <div class="stat-box"><div>TOTALE SPESO</div><div id="totalSpent" class="text-red stat-num">€ 0</div></div>
+        <h3 style="margin-top:20px;">Valore Ricevuto per Membro</h3>
+        <div id="familyStatsContainer"></div>
+        <h3>Spesa per Tag</h3>
+        <div id="tagAnalysisChart" style="margin-bottom:30px;"></div>
+    </div>
+
+    <div id="mainNav" class="bottom-nav hide-in-home">
+        <div class="nav-item" onclick="window.navTo('start')"><span class="nav-icon">🏁</span>Start</div>
+        <div class="nav-item active" onclick="window.navTo('section_home')"><span class="nav-icon">🏠</span>Home</div>
+        <div class="nav-item" onclick="window.navTo('analisi')"><span class="nav-icon">📊</span>Analisi</div>
+        <div class="nav-item" onclick="window.navTo('rubrica')"><span class="nav-icon">👥</span>Rubrica</div>
+        <div class="nav-item" onclick="window.navTo('settings')"><span class="nav-icon">⚙️</span>Opz.</div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, doc, deleteDoc, updateDoc, setDoc, query, where, orderBy, onSnapshot, writeBatch } 
+        from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // --- 👇 INCOLLA LA TUA CONFIG FIREBASE QUI 👇 ---
+        const firebaseConfig = {
+  apiKey: "AIzaSyBLIs9qFPlERFyu6V2fI2Gw0UbuaMea-Wk",
+  authDomain: "gifttracker-8a628.firebaseapp.com",
+  projectId: "gifttracker-8a628",
+  storageBucket: "gifttracker-8a628.firebasestorage.app",
+  messagingSenderId: "86139174948",
+  appId: "1:86139174948:web:952a9dbbbbc5c0402158b1"
+
+        };
+        // ------------------------------------------------
+
+        try {
+            const app = initializeApp(firebaseConfig);
+            window.db = getFirestore(app);
+            window.dbSdk = { collection, addDoc, getDocs, doc, deleteDoc, updateDoc, setDoc, query, where, orderBy, onSnapshot, writeBatch };
+            document.getElementById('dbStatus').innerText = "✅ Online";
+        } catch (e) {
+            document.getElementById('errorMsg').innerText = "Errore Config: " + e.message;
+            document.getElementById('errorMsg').style.display = 'block';
+        }
+    </script>
+    <script src="app.js"></script>
+</body>
+</html>
