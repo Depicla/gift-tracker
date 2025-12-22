@@ -16,6 +16,60 @@ window.onload = function() {
     if(localStorage.getItem('theme') === 'dark') document.body.classList.add('dark-mode');
 };
 
+// === HELPER FUNCTIONS (Caricamento Dati) ===
+async function loadPeopleCache() {
+    const s = await window.dbSdk.getDocs(window.dbSdk.collection(window.db, "persone"));
+    state.peopleCache = [];
+    s.forEach(d => state.peopleCache.push({id: d.id, ...d.data()}));
+}
+
+async function checkAndAddPerson(name, relation) {
+    const q = window.dbSdk.query(window.dbSdk.collection(window.db, "persone"), window.dbSdk.where("name", "==", name));
+    const snap = await window.dbSdk.getDocs(q);
+    if(snap.empty) {
+        await window.dbSdk.addDoc(window.dbSdk.collection(window.db, "persone"), { name: name, relation: relation || "Altro" });
+        await loadPeopleCache();
+    }
+}
+
+async function processAndSaveContacts(namesStr, relation) {
+    if (!namesStr) return;
+    const names = namesStr.split(',').map(s => s.trim()).filter(s => s !== "" && s !== "Io" && s !== "Claudio" && s !== "Giovanna" && s !== "Isabel");
+    for (let name of names) { await checkAndAddPerson(name, relation); }
+}
+
+async function loadPeopleDatalist() {
+    const d = document.getElementById('peopleDatalist');
+    d.innerHTML = "";
+    // Ricarica sempre fresco dal DB per sicurezza
+    const s = await window.dbSdk.getDocs(window.dbSdk.collection(window.db, "persone"));
+    s.forEach(x => d.innerHTML += `<option value="${x.data().name}">`)
+}
+
+function populateTagSelect(id, arr) {
+    const s = document.getElementById(id);
+    if(s) { s.innerHTML = ""; arr.forEach(x => s.innerHTML += `<option value="${x}">${x}</option>`) }
+}
+
+// === RESET FORM AGGRESSIVO ===
+function resetForms() {
+    // 1. Svuota input testuali
+    ['giftDesc', 'giftAmount', 'giftNotes', 'quickDesc', 'quickAmount'].forEach(id => {
+        if(document.getElementById(id)) document.getElementById(id).value = "";
+    });
+    
+    // 2. Resetta Select
+    ['giftTag', 'giftType', 'quickTag', 'quickType'].forEach(id => {
+        if(document.getElementById(id)) document.getElementById(id).selectedIndex = 0;
+    });
+
+    // 3. Pulisce ID e File
+    state.giftId = null;
+    if(document.getElementById('giftIdHidden')) document.getElementById('giftIdHidden').value = "";
+    if(document.getElementById('giftFileBase64')) document.getElementById('giftFileBase64').value = "";
+    if(document.getElementById('imgPreview')) document.getElementById('imgPreview').style.display = 'none';
+}
+
 // === NAVIGAZIONE ===
 window.navTo = function(pageId) {
     document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
@@ -74,7 +128,7 @@ window.navTo = function(pageId) {
                 break;
             case 'quick_gift':
                 document.getElementById('quickGiftPage').classList.add('active');
-                setupQuickGiftForm();
+                if(!state.giftId) { resetForms(); setupQuickGiftForm(); } 
                 backBtn.onclick = () => window.navTo('lista_eventi');
                 break;
             case 'evento_dettaglio':
@@ -86,7 +140,7 @@ window.navTo = function(pageId) {
                 break;
             case 'aggiungi_regalo':
                 document.getElementById('addGiftPage').classList.add('active');
-                setupAddGiftForm();
+                if(!state.giftId) { resetForms(); setupAddGiftForm(); } 
                 backBtn.onclick = () => window.navTo('evento_dettaglio');
                 break;
             case 'analisi': document.getElementById('analysisPage').classList.add('active'); backBtn.classList.add('hidden'); window.calculateAnalysis(); break;
@@ -99,118 +153,68 @@ window.navTo = function(pageId) {
 
 window.selectCategory = (cat) => { state.category = cat; window.navTo('lista_eventi'); };
 
-// === RUBRICA E RICERCA FUZZY ===
-async function loadPeopleCache() {
-    const snap = await window.dbSdk.getDocs(window.dbSdk.collection(window.db, "persone"));
-    state.peopleCache = [];
-    snap.forEach(d => state.peopleCache.push({id: d.id, ...d.data()}));
-}
-
-// Funzione di filtro per la barra di ricerca
-window.filterPeople = function() {
-    const term = document.getElementById('searchPeopleInput').value.toLowerCase();
-    const filtered = state.peopleCache.filter(p => p.name.toLowerCase().includes(term));
-    renderPeopleList(filtered);
-}
-
-// Renderizza lista (usato sia da load che da filter)
-function renderPeopleList(list) {
-    const c = document.getElementById('peopleListContainer');
-    c.innerHTML = "";
-    
-    list.sort((a,b) => a.name.localeCompare(b.name));
-    
-    list.forEach(p => {
-        const div = document.createElement('div');
-        div.className = 'cat-item';
-        div.innerHTML = `
-            <div onclick="openPersonAnalysis('${p.name}')" style="flex-grow:1;">
-                <strong>${p.name}</strong> <span class="tag-pill">${p.relation || 'Altro'}</span>
-            </div>
-            <div class="cat-actions">
-                <div class="btn-icon" onclick="editPerson('${p.id}','${p.name}','${p.relation}')">✏️</div>
-                <div class="btn-icon text-red" onclick="deletePerson('${p.id}')">🗑</div>
-            </div>`;
-        c.appendChild(div);
-    });
-}
-
-async function loadPeopleList() {
-    document.getElementById('peopleListContainer').innerHTML = "Caricamento...";
-    await loadPeopleCache();
-    renderPeopleList(state.peopleCache);
-}
-
-// === FIX MODIFICA REGALO (Popola PRIMA i tag, POI i valori) ===
-window.editGiftSetup = async(id) => {
-    state.giftId = id; 
-    
-    // 1. Vai alla pagina
-    window.navTo('aggiungi_regalo');
-    
-    // 2. Assicura che le select siano popolate
-    populateTagSelect('giftTag', state.tags);
-    populateTagSelect('giftRelation', state.personTags);
-
-    // 3. Recupera dati e imposta valori
-    const d = await window.getDocById("regali", id);
-    if(d) {
-        document.getElementById('giftSender').value = d.sender || "";
-        document.getElementById('giftPerson').value = d.recipient || d.person;
-        document.getElementById('giftDesc').value = d.desc;
-        document.getElementById('giftAmount').value = d.amount;
-        document.getElementById('giftNotes').value = d.notes;
-        
-        // Imposta i valori delle select DOPO averle popolate
-        document.getElementById('giftTag').value = d.tag;
-        document.getElementById('giftType').value = d.type; // Oggetto/Busta
-        
-        document.getElementById('giftFileBase64').value = d.file||"";
-        if(d.file){
-            document.getElementById('imgPreview').src=d.file; 
-            document.getElementById('imgPreview').style.display='block';
+// === GESTIONE TAG (AGGIUNTA E CANCELLAZIONE) ===
+window.promptAddTag = function(type) {
+    const t = prompt("Nuovo Tag:");
+    if(t && t.trim() !== "") {
+        if(type === 'gift') {
+            if(!state.tags.includes(t)) state.tags.push(t);
+            localStorage.setItem('customTags', JSON.stringify(state.tags));
+        } else {
+            if(!state.personTags.includes(t)) state.personTags.push(t);
+            localStorage.setItem('personTags', JSON.stringify(state.personTags));
         }
-        document.getElementById('giftIdHidden').value = id;
+        renderTagsSettings();
     }
 };
 
-// ... Resto Funzioni (Standard) ...
-async function checkAndAddPerson(name, relation) {
-    const q = window.dbSdk.query(window.dbSdk.collection(window.db, "persone"), window.dbSdk.where("name", "==", name));
-    const snap = await window.dbSdk.getDocs(q);
-    if(snap.empty) {
-        await window.dbSdk.addDoc(window.dbSdk.collection(window.db, "persone"), { name: name, relation: relation || "Altro" });
-        await loadPeopleCache();
+window.deleteTag = function(type, tag) {
+    if(confirm("Eliminare il tag '" + tag + "'?")) {
+        if(type === 'gift') {
+            state.tags = state.tags.filter(t => t !== tag);
+            localStorage.setItem('customTags', JSON.stringify(state.tags));
+        } else {
+            state.personTags = state.personTags.filter(t => t !== tag);
+            localStorage.setItem('personTags', JSON.stringify(state.personTags));
+        }
+        renderTagsSettings();
     }
+};
+
+function renderTagsSettings() {
+    // Genera HTML per i tag regalo
+    const giftTagsHtml = state.tags.map(t => 
+        `<span class="tag-pill">${t} <span onclick="window.deleteTag('gift', '${t}')" class="tag-remove">✖</span></span>`
+    ).join(' ');
+    document.getElementById('tagsList').innerHTML = giftTagsHtml || "Nessun tag";
+
+    // Genera HTML per i tag persona
+    const personTagsHtml = state.personTags.map(t => 
+        `<span class="tag-pill" style="background:#e0f7fa; color:#006064;">${t} <span onclick="window.deleteTag('person', '${t}')" class="tag-remove">✖</span></span>`
+    ).join(' ');
+    document.getElementById('peopleTagsList').innerHTML = personTagsHtml || "Nessun tag";
 }
-window.addPerson = async () => {
-    const name = document.getElementById('newPersonName').value;
-    const relation = document.getElementById('newPersonRelation').value;
-    if(!name) return alert("Inserisci un nome!");
-    try {
-        await window.dbSdk.addDoc(window.dbSdk.collection(window.db, "persone"), { name: name, relation: relation || "Altro" });
-        await loadPeopleCache();
-        document.getElementById('newPersonName').value = "";
-        loadPeopleList();
-        alert("Aggiunto!");
-    } catch(e) { alert("Errore: " + e.message); }
-};
-window.deletePerson = async (id) => { if(confirm("Eliminare contatto?")) { await window.dbSdk.deleteDoc(window.dbSdk.doc(window.db, "persone", id)); loadPeopleList(); loadPeopleCache(); } };
-window.editPerson = async (id, oldName, oldRel) => { const newName = prompt("Modifica nome:", oldName); if(newName && newName !== oldName) { await window.dbSdk.updateDoc(window.dbSdk.doc(window.db, "persone", id), { name: newName }); loadPeopleList(); loadPeopleCache(); } };
 
-// Reset Form (con pulizia totale)
+function loadTags() {
+    const t = localStorage.getItem('customTags'); if(t) state.tags = JSON.parse(t);
+    const pt = localStorage.getItem('personTags'); if(pt) state.personTags = JSON.parse(pt);
+}
+
+// === SETUP FORMS CON RESET ===
 function setupQuickGiftForm() {
-    document.getElementById('quickDesc').value = "";
-    document.getElementById('quickAmount').value = "";
-    document.getElementById('quickTag').selectedIndex = 0;
-    document.getElementById('quickType').selectedIndex = 0;
+    // Carica dati necessari
+    loadPeopleDatalist();
+    populateTagSelect('quickTag', state.tags);
+    populateTagSelect('quickRelation', state.personTags);
     
     const qSender = document.getElementById('quickSender');
     const qPerson = document.getElementById('quickPerson');
     
+    // Imposta default puliti
     if(state.mode === 'fatti') { qSender.value = "Claudio"; qPerson.value = ""; } 
     else { qSender.value = ""; qPerson.value = state.familyMember; }
 
+    // Se stiamo creando DENTRO un evento, precompila SOLO l'evento
     if(state.eventId) { 
         document.getElementById('quickEventName').value = state.eventData.name;
         document.getElementById('quickDateInput').value = state.eventData.date;
@@ -220,43 +224,35 @@ function setupQuickGiftForm() {
         document.getElementById('quickDateInput').value = new Date().toISOString().split('T')[0];
         document.getElementById('quickEventIdHidden').value = "";
     }
-    loadPeopleDatalist();
-    populateTagSelect('quickTag', state.tags);
-    populateTagSelect('quickRelation', state.personTags);
 }
 
 function setupAddGiftForm() {
-    document.getElementById('giftDesc').value = "";
-    document.getElementById('giftAmount').value = "";
-    document.getElementById('giftNotes').value = "";
-    document.getElementById('giftFileBase64').value = "";
-    document.getElementById('imgPreview').style.display = 'none';
-    document.getElementById('giftIdHidden').value = ""; 
+    loadPeopleDatalist();
+    populateTagSelect('giftTag', state.tags);
+    populateTagSelect('giftRelation', state.personTags);
 
     const gSender = document.getElementById('giftSender');
     const gPerson = document.getElementById('giftPerson');
     
     if(state.mode === 'fatti') { gSender.value = "Claudio"; gPerson.value = ""; } 
     else { gSender.value = ""; gPerson.value = state.familyMember; }
-    
-    loadPeopleDatalist();
-    // Importante: popolare le select PRIMA che l'utente possa vederle vuote
-    populateTagSelect('giftTag', state.tags);
-    populateTagSelect('giftRelation', state.personTags);
 }
 
-// ... Altre funzioni essenziali (Copia-incolla) ...
-window.openTypeModal=()=>{document.getElementById('typeModal').style.display='flex'}; window.goToSingle=()=>{state.eventId=null;document.getElementById('typeModal').style.display='none';window.navTo('quick_gift')}; window.goToGroup=()=>{document.getElementById('typeModal').style.display='none';window.navTo('crea_evento')};
+// ... COPY REST STANDARD ...
+window.openAddSenderModal = function(targetId) { document.getElementById('addSenderModal').style.display = 'flex'; document.getElementById('targetInputId').value = targetId; document.getElementById('extraPersonInput').value = ""; document.getElementById('extraPersonInput').focus(); };
+window.confirmAddSender = function() { const newVal = document.getElementById('extraPersonInput').value; const targetId = document.getElementById('targetInputId').value; const input = document.getElementById(targetId); if(newVal && newVal.trim() !== "") { if(input.value) input.value += ", " + newVal.trim(); else input.value = newVal.trim(); } document.getElementById('addSenderModal').style.display = 'none'; };
 window.togglePersonView = function(view) { if(view === 'fatti') { document.getElementById('histFattiContainer').style.display = 'block'; document.getElementById('histRicevutiContainer').style.display = 'none'; } else { document.getElementById('histFattiContainer').style.display = 'none'; document.getElementById('histRicevutiContainer').style.display = 'block'; } };
-window.openPersonAnalysis = async function(name) { document.getElementById('personDetailTitle').innerText = name; window.navTo('person_detail'); const md = document.getElementById('personGiftsMade'); const rd = document.getElementById('personGiftsReceived'); md.innerHTML = "Caricamento..."; rd.innerHTML = "Caricamento..."; const qS = window.dbSdk.query(window.dbSdk.collection(window.db, "regali"), window.dbSdk.where("sender", "==", name)); const sS = await window.dbSdk.getDocs(qS); const qR = window.dbSdk.query(window.dbSdk.collection(window.db, "regali"), window.dbSdk.where("recipient", "==", name)); const sR = await window.dbSdk.getDocs(qR); md.innerHTML = ""; rd.innerHTML = ""; let sv = 0, rv = 0; if(sS.empty) md.innerHTML = "<small>Nessun regalo fatto.</small>"; sS.forEach(d => { const dt = d.data(); sv += dt.amount; md.innerHTML += createGiftCard(dt, d.id, 'sender'); }); if(sR.empty) rd.innerHTML = "<small>Nessun regalo ricevuto.</small>"; sR.forEach(d => { const dt = d.data(); rv += dt.amount; rd.innerHTML += createGiftCard(dt, d.id, 'recipient'); }); document.getElementById('personBalance').innerText = `Ha Fatto: € ${sv} | Ha Ricevuto: € ${rv}`; };
-function createGiftCard(dt, id, context) { const arrow = context === 'sender' ? `A: <strong>${dt.recipient}</strong>` : `Da: <strong>${dt.sender}</strong>`; const color = context === 'sender' ? '#FF9A9E' : '#a18cd1'; return `<div class="event-compact" onclick="editGiftSetup('${id}')" style="cursor:pointer;border-left:4px solid ${color}"><div style="flex-grow:1;"><div style="font-weight:bold;font-size:14px;">${dt.desc}</div><div style="font-size:11px;color:#666;">${dt.eventName} (${dt.year})</div><div style="font-size:11px;margin-top:2px;">${arrow}</div></div><div style="font-weight:bold;">€ ${dt.amount}</div></div>`}
-window.handleQuickGift = async function(addAnother) { const date = document.getElementById('quickDateInput').value; const evName = document.getElementById('quickEventName').value; const sender = document.getElementById('quickSender').value; const recipient = document.getElementById('quickPerson').value; const relation = document.getElementById('quickRelation').value; const desc = document.getElementById('quickDesc').value; const amount = parseFloat(document.getElementById('quickAmount').value) || 0; const type = document.getElementById('quickType').value; const tag = document.getElementById('quickTag').value; const evId = document.getElementById('quickEventIdHidden').value; if(!recipient || !evName) return alert("Compila tutto"); try { let evRefId = state.eventId || evId; if(!evRefId) { const evRef = await window.dbSdk.addDoc(window.dbSdk.collection(window.db, "eventi"), { mode: state.mode, category: state.category, familyMember: state.familyMember, name: evName, date: date, type: 'singolo', createdAt: new Date().toISOString() }); evRefId = evRef.id; state.eventId = evRefId; state.eventData = { name: evName, date: date }; } else { await window.dbSdk.updateDoc(window.dbSdk.doc(window.db, "eventi", evRefId), { name: evName, date: date }); } await window.dbSdk.addDoc(window.dbSdk.collection(window.db, "regali"), { eventId: evRefId, eventName: evName, person: recipient, sender: sender, recipient: recipient, desc, amount, tag, type, mode: state.mode, year: date.split('-')[0], createdAt: new Date().toISOString() }); if(state.mode === 'fatti' && recipient !== 'Io') await checkAndAddPerson(recipient, relation); if(state.mode === 'ricevuti' && sender !== 'Io') await checkAndAddPerson(sender, relation); if(addAnother) { alert("Salvato!"); document.getElementById('quickDesc').value = ""; document.getElementById('quickAmount').value = ""; } else { alert("Salvato!"); window.navTo('lista_eventi'); } } catch(err) { alert(err.message); } };
-window.handleSaveGift = async function(addAnother) { const sender = document.getElementById('giftSender').value; const recipient = document.getElementById('giftPerson').value; const relation = document.getElementById('giftRelation').value; const amount = parseFloat(document.getElementById('giftAmount').value) || 0; const id = document.getElementById('giftIdHidden').value; if(!recipient) return alert("Nome obbligatorio"); try { const payload = { eventId: state.eventId, eventName: state.eventData.name || "Evento", person: recipient, sender: sender, recipient: recipient, desc: document.getElementById('giftDesc').value || "Oggetto", amount, tag: document.getElementById('giftTag').value, type: document.getElementById('giftType').value, notes: document.getElementById('giftNotes').value, file: document.getElementById('giftFileBase64').value, mode: state.mode, year: state.eventData.date.split('-')[0], createdAt: new Date().toISOString() }; if(id) await window.dbSdk.updateDoc(window.dbSdk.doc(window.db, "regali", id), payload); else { await window.dbSdk.addDoc(window.dbSdk.collection(window.db, "regali"), payload); if(state.mode === 'fatti' && recipient !== 'Io') await checkAndAddPerson(recipient, relation); if(state.mode === 'ricevuti' && sender !== 'Io') await checkAndAddPerson(sender, relation); } if(addAnother) { alert("Salvato!"); document.getElementById('giftDesc').value = ""; document.getElementById('giftAmount').value = ""; state.giftId = null; } else { window.navTo('evento_dettaglio'); } } catch(err) { alert(err.message); } };
-function loadTags() { const t = localStorage.getItem('customTags'); if(t) state.tags = JSON.parse(t); const pt = localStorage.getItem('personTags'); if(pt) state.personTags = JSON.parse(pt); }
-function populateTagSelect(id,arr){const s=document.getElementById(id);if(s){s.innerHTML="";arr.forEach(x=>s.innerHTML+=`<option value="${x}">${x}</option>`)}}
-window.promptAddTag = function(type) { const t = prompt("Nuovo Tag:"); if(t && t.trim() !== "") { if(type === 'gift') { if(!state.tags.includes(t)) state.tags.push(t); localStorage.setItem('customTags', JSON.stringify(state.tags)); } else { if(!state.personTags.includes(t)) state.personTags.push(t); localStorage.setItem('personTags', JSON.stringify(state.personTags)); } renderTagsSettings(); } };
+window.openPersonAnalysis = async function(name) { document.getElementById('personDetailTitle').innerText = name; window.navTo('person_detail'); const md = document.getElementById('personGiftsMade'); const rd = document.getElementById('personGiftsReceived'); md.innerHTML = "Caricamento..."; rd.innerHTML = "Caricamento..."; const snap = await window.dbSdk.getDocs(window.dbSdk.collection(window.db, "regali")); let sentList = []; let recvList = []; let sentVal = 0, recvVal = 0; snap.forEach(d => { const dt = d.data(); const isSender = (dt.sender||"").includes(name); const isRecipient = (dt.recipient||"").includes(name); if (isSender) { sentVal += (dt.amount || 0); sentList.push({id: d.id, ...dt}); } if (isRecipient) { recvVal += (dt.amount || 0); recvList.push({id: d.id, ...dt}); } }); const sorter = (a, b) => { const dateA = a.createdAt || "1970-01-01"; const dateB = b.createdAt || "1970-01-01"; return dateB.localeCompare(dateA); }; sentList.sort(sorter); recvList.sort(sorter); md.innerHTML = sentList.length ? "" : "<small style='color:#999'>Nessun regalo fatto.</small>"; sentList.forEach(item => { md.innerHTML += createGiftCard(item, item.id, 'sender'); }); rd.innerHTML = recvList.length ? "" : "<small style='color:#999'>Nessun regalo ricevuto.</small>"; recvList.forEach(item => { rd.innerHTML += createGiftCard(item, item.id, 'recipient'); }); document.getElementById('personSentVal').innerText = "€ " + sentVal.toFixed(2); document.getElementById('personRecvVal').innerText = "€ " + recvVal.toFixed(2); };
+function createGiftCard(dt, id, context) { const arrow = context === 'sender' ? `A: <strong>${dt.recipient}</strong>` : `Da: <strong>${dt.sender}</strong>`; const color = context === 'sender' ? '#FF9A9E' : '#a18cd1'; return `<div class="event-compact" onclick="editGiftSetup('${id}')" style="cursor:pointer; border-left-color:${color}"><div style="flex-grow:1;"><div style="font-size:13px; font-weight:bold;">${dt.desc}</div><div style="font-size:11px; color:#666;">${dt.eventName} (${dt.year})</div><div style="font-size:11px; margin-top:2px;">${arrow}</div></div><div style="font-weight:bold; color:#333;">€ ${dt.amount}</div></div>`}
+window.openTypeModal=()=>{document.getElementById('typeModal').style.display='flex'}; window.goToSingle=()=>{state.eventId=null;document.getElementById('typeModal').style.display='none';window.navTo('quick_gift')}; window.goToGroup=()=>{document.getElementById('typeModal').style.display='none';window.navTo('crea_evento')};
+window.editGiftSetup = async(id) => { state.giftId = id; window.navTo('aggiungi_regalo'); populateTagSelect('giftTag', state.tags); populateTagSelect('giftRelation', state.personTags); const d = await window.getDocById("regali", id); if(d) { document.getElementById('giftSender').value = d.sender || ""; document.getElementById('giftPerson').value = d.recipient || d.person; document.getElementById('giftDesc').value = d.desc; document.getElementById('giftAmount').value = d.amount; document.getElementById('giftNotes').value = d.notes; document.getElementById('giftTag').value = d.tag; document.getElementById('giftType').value = d.type; document.getElementById('giftFileBase64').value = d.file||""; if(d.file){document.getElementById('imgPreview').src=d.file; document.getElementById('imgPreview').style.display='block'} document.getElementById('giftIdHidden').value = id; } };
+window.addPerson = async () => { const n = document.getElementById('newPersonName').value; const r = document.getElementById('newPersonRelation').value; if(!n) return alert("Inserisci un nome!"); try { await window.dbSdk.addDoc(window.dbSdk.collection(window.db, "persone"), { name: n, relation: r || "Altro" }); await loadPeopleCache(); document.getElementById('newPersonName').value = ""; loadPeopleList(); alert("Aggiunto!"); } catch(e) { alert("Errore: " + e.message); } };
+window.deletePerson = async (id) => { if(confirm("Eliminare contatto?")) { await window.dbSdk.deleteDoc(window.dbSdk.doc(window.db, "persone", id)); loadPeopleList(); loadPeopleCache(); } };
+window.editPerson = async (id, oldName, oldRel) => { const newName = prompt("Modifica nome:", oldName); if(newName && newName !== oldName) { await window.dbSdk.updateDoc(window.dbSdk.doc(window.db, "persone", id), { name: newName }); loadPeopleList(); loadPeopleCache(); } };
+async function loadPeopleList() { const c = document.getElementById('peopleListContainer'); c.innerHTML = "Caricamento..."; await loadPeopleCache(); c.innerHTML = ""; state.peopleCache.sort((a,b) => a.name.localeCompare(b.name)); state.peopleCache.forEach(p => { const div = document.createElement('div'); div.className = 'cat-item'; div.innerHTML = `<div onclick="window.openPersonAnalysis('${p.name}')" style="flex-grow:1;"><strong>${p.name}</strong> <span class="tag-pill">${p.relation || 'Altro'}</span></div><div class="cat-actions"><div class="btn-icon" onclick="window.editPerson('${p.id}','${p.name}','${p.relation}')">✏️</div><div class="btn-icon text-red" onclick="window.deletePerson('${p.id}')">🗑</div></div>`; c.appendChild(div); }); }
+window.filterPeople = function() { const term = document.getElementById('searchPeopleInput').value.toLowerCase(); const filtered = state.peopleCache.filter(p => p.name.toLowerCase().includes(term)); renderPeopleList(filtered); };
+function renderPeopleList(list) { const c = document.getElementById('peopleListContainer'); c.innerHTML = ""; list.sort((a,b) => a.name.localeCompare(b.name)); list.forEach(p => { const div = document.createElement('div'); div.className = 'cat-item'; div.innerHTML = `<div onclick="window.openPersonAnalysis('${p.name}')" style="flex-grow:1;"><strong>${p.name}</strong> <span class="tag-pill">${p.relation || 'Altro'}</span></div><div class="cat-actions"><div class="btn-icon" onclick="window.editPerson('${p.id}','${p.name}','${p.relation}')">✏️</div><div class="btn-icon text-red" onclick="window.deletePerson('${p.id}')">🗑</div></div>`; c.appendChild(div); }); }
 window.resetTags = function(type) { if(confirm("Ripristinare i tag?")) { if(type === 'gift') localStorage.removeItem('customTags'); else localStorage.removeItem('personTags'); window.location.reload(); } };
-function renderTagsSettings() { document.getElementById('tagsList').innerHTML = state.tags.map(t => `<span class="tag-pill">${t}</span>`).join(' '); document.getElementById('peopleTagsList').innerHTML = state.personTags.map(t => `<span class="tag-pill" style="background:#e0f7fa; color:#006064;">${t}</span>`).join(' '); }
 window.wipeDatabase=async()=>{if(prompt("SCRIVI 'CANCELLA'")!=="CANCELLA")return;document.body.style.opacity="0.5";const cs=["eventi","regali","persone","famiglia","categorie"];try{for(let c of cs){const s=await window.dbSdk.getDocs(window.dbSdk.collection(window.db,c));for(let d of s.docs)await window.dbSdk.deleteDoc(window.dbSdk.doc(window.db,c,d.id))}alert("Reset!");window.location.reload()}catch(e){alert(e);document.body.style.opacity="1"}};
 async function loadUnifiedCategories(){const l=document.getElementById('unifiedCatList');l.innerHTML="Caricamento...";const d=["Natale","Compleanno","Matrimonio","Laurea","Battesimo"];const s=await window.dbSdk.getDocs(window.dbSdk.collection(window.db,"categorie"));if(s.empty){for(let c of d)await window.dbSdk.addDoc(window.dbSdk.collection(window.db,"categorie"),{name:c});return loadUnifiedCategories()}let a=[];s.forEach(d=>a.push({id:d.id,name:d.data().name}));a.sort((x,y)=>x.name.localeCompare(y.name));l.innerHTML="";a.forEach(c=>{const v=document.createElement('div');v.className='cat-item';v.innerHTML=`<div class="cat-name" onclick="window.selectCategory('${c.name}')">${c.name}</div><div class="cat-actions"><div class="btn-icon" onclick="editCategory('${c.id}','${c.name}')">✏️</div></div>`;l.appendChild(v)})}
 window.createCustomCategory=async()=>{const c=prompt("Nome:");if(c)await window.dbSdk.addDoc(window.dbSdk.collection(window.db,"categorie"),{name:c});loadUnifiedCategories()}; window.editCategory=async(i,o)=>{const n=prompt("Modifica (vuoto=elimina):",o);if(n===null)return;if(n===""){if(confirm("Elimina?"))await window.dbSdk.deleteDoc(window.dbSdk.doc(window.db,"categorie",i))}else await window.dbSdk.updateDoc(window.dbSdk.doc(window.db,"categorie",i),{name:n});loadUnifiedCategories()};
@@ -278,3 +274,5 @@ async function loadFamilyMembers(){const c=document.getElementById('familyListCo
 window.selectFamilyMember=(n)=>{state.familyMember=n;window.navTo('ricevuti_categorie')}; window.editFamilyMember=async(id,old)=>{const n=prompt("Nome:",old);if(n&&n!==old){await window.dbSdk.updateDoc(window.dbSdk.doc(window.db,"famiglia",id),{name:n});loadFamilyMembers()}}; window.deleteFamilyMember=async(id)=>{if(confirm("Eliminare?")){await window.dbSdk.deleteDoc(window.dbSdk.doc(window.db,"famiglia",id));loadFamilyMembers()}}; window.promptAddFamilyMember=async()=>{const n=prompt("Nome:");if(n)await window.dbSdk.addDoc(window.dbSdk.collection(window.db,"famiglia"),{name:n});loadFamilyMembers()};
 window.appendSender=(id)=>{const v=prompt("Chi altro?");if(v)document.getElementById(id).value+=", "+v};
 window.toggleTheme=()=>{document.body.classList.toggle('dark-mode');localStorage.setItem('theme',document.body.classList.contains('dark-mode')?'dark':'light')};
+window.handleQuickGift=async(addAnother)=>{const date=document.getElementById('quickDateInput').value;const evName=document.getElementById('quickEventName').value;const sender=document.getElementById('quickSender').value;const recipient=document.getElementById('quickPerson').value;const relation=document.getElementById('quickRelation').value;const desc=document.getElementById('quickDesc').value;const amount=parseFloat(document.getElementById('quickAmount').value)||0;const type=document.getElementById('quickType').value;const tag=document.getElementById('quickTag').value;const evId=document.getElementById('quickEventIdHidden').value;if(!recipient||!evName)return alert("Compila tutto");try{let evRefId=state.eventId||evId;if(!evRefId){const evRef=await window.dbSdk.addDoc(window.dbSdk.collection(window.db,"eventi"),{mode:state.mode,category:state.category,familyMember:state.familyMember,name:evName,date:date,type:'singolo',createdAt:new Date().toISOString()});evRefId=evRef.id;state.eventId=evRefId;state.eventData={name:evName,date:date}}else{await window.dbSdk.updateDoc(window.dbSdk.doc(window.db,"eventi",evRefId),{name:evName,date:date})}await window.dbSdk.addDoc(window.dbSdk.collection(window.db,"regali"),{eventId:evRefId,eventName:evName,person:recipient,sender:sender,recipient:recipient,desc,amount,tag,type,mode:state.mode,year:date.split('-')[0],createdAt:new Date().toISOString()});if(state.mode==='fatti')await processAndSaveContacts(recipient,relation);if(state.mode==='ricevuti')await processAndSaveContacts(sender,relation);if(addAnother){alert("Salvato!");document.getElementById('quickDesc').value="";document.getElementById('quickAmount').value=""}else{alert("Salvato!");window.navTo('lista_eventi')}}catch(e){alert(e.message)}};
+window.handleSaveGift=async(addAnother)=>{const sender=document.getElementById('giftSender').value;const recipient=document.getElementById('giftPerson').value;const relation=document.getElementById('giftRelation').value;const amount=parseFloat(document.getElementById('giftAmount').value)||0;const id=document.getElementById('giftIdHidden').value;if(!recipient)return alert("Nome obbligatorio");try{const payload={eventId:state.eventId,eventName:state.eventData.name||"Evento",person:recipient,sender:sender,recipient:recipient,desc:document.getElementById('giftDesc').value||"Oggetto",amount,tag:document.getElementById('giftTag').value,type:document.getElementById('giftType').value,notes:document.getElementById('giftNotes').value,file:document.getElementById('giftFileBase64').value,mode:state.mode,year:state.eventData.date.split('-')[0],createdAt:new Date().toISOString()};if(id)await window.dbSdk.updateDoc(window.dbSdk.doc(window.db,"regali",id),payload);else{await window.dbSdk.addDoc(window.dbSdk.collection(window.db,"regali"),payload);if(state.mode==='fatti')await processAndSaveContacts(recipient,relation);if(state.mode==='ricevuti')await processAndSaveContacts(sender,relation)}if(addAnother){alert("Salvato!");document.getElementById('giftDesc').value="";document.getElementById('giftAmount').value="";state.giftId=null}else window.navTo('evento_dettaglio')}catch(e){alert(e.message)}};

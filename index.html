@@ -31,13 +31,15 @@
     <div id="addSenderModal" class="modal-overlay">
         <div class="modal-box">
             <h3>Aggiungi Persona</h3>
-            <p style="color:#666; font-size:13px;">Chi altro partecipa al regalo?</p>
-            <input type="text" id="extraPersonInput" list="peopleDatalist" placeholder="Cerca in rubrica..." autocomplete="off">
+            <p style="color:#666; font-size:13px;">Scegli dalla rubrica:</p>
+            <input type="text" id="extraPersonInput" list="peopleDatalist" placeholder="Cerca..." autocomplete="off">
             <input type="hidden" id="targetInputId">
             <button onclick="window.confirmAddSender()" style="width:100%; padding:12px; background:var(--primary); color:white; border:none; border-radius:10px; font-weight:bold;">Aggiungi</button>
             <button onclick="document.getElementById('addSenderModal').style.display='none'" style="margin-top:15px; background:none; border:none; color:#999;">Annulla</button>
         </div>
     </div>
+
+    <datalist id="peopleDatalist"></datalist>
 
     <div id="homePage" class="section active">
         <div id="btnRed" class="click-zone" onclick="window.navTo('fatti_categorie')"></div>
@@ -84,7 +86,7 @@
             <hr style="margin:15px 0; border:0; border-top:1px dashed #ccc;">
             <label>Da parte di:</label>
             <div style="display:flex; gap:5px;">
-                <input type="text" id="quickSender" list="peopleDatalist" placeholder="Chi regala?" oninput="window.autoSelectRelation(this.value, 'quickRelation')">
+                <input type="text" id="quickSender" list="peopleDatalist" placeholder="Chi regala?" oninput="window.autoSelectRelation(this.value, 'quickRelation')" autocomplete="off">
                 <button onclick="window.openAddSenderModal('quickSender')" style="width:40px; background:#eee; border:none; border-radius:10px;">+</button>
             </div>
             <label>Per (Destinatario):</label>
@@ -92,7 +94,6 @@
                 <input type="text" id="quickPerson" list="peopleDatalist" placeholder="Chi riceve?" required autocomplete="off" oninput="window.autoSelectRelation(this.value, 'quickRelation')">
                 <select id="quickRelation" style="width:110px;"></select>
             </div>
-            <datalist id="peopleDatalist"></datalist>
             <label>Cosa?</label>
             <input type="text" id="quickDesc" placeholder="Es. Orologio" required>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
@@ -125,7 +126,7 @@
             <input type="hidden" id="giftIdHidden">
             <label>Da parte di:</label>
             <div style="display:flex; gap:10px;">
-                <input type="text" id="giftSender" list="peopleDatalist" placeholder="..." oninput="window.autoSelectRelation(this.value, 'giftRelation')">
+                <input type="text" id="giftSender" list="peopleDatalist" placeholder="..." oninput="window.autoSelectRelation(this.value, 'giftRelation')" autocomplete="off">
                 <button onclick="window.openAddSenderModal('giftSender')" style="width:40px; background:#eee; border:none; border-radius:10px;">+</button>
             </div>
             <label>Per:</label>
@@ -156,9 +157,7 @@
 
     <div id="peoplePage" class="section">
         <h2>Rubrica</h2>
-        
         <input type="text" id="searchPeopleInput" class="search-input" placeholder="🔍 Cerca contatto..." oninput="window.filterPeople()" style="margin-bottom:15px;">
-
         <div class="card" style="background:var(--input-bg); border:none; box-shadow:none;">
             <label style="font-size:12px;">Nuova Persona:</label>
             <div style="display:flex; gap:10px;">
@@ -173,10 +172,16 @@
     <div id="personDetailPage" class="section">
         <h2 id="personDetailTitle">...</h2>
         <div class="stat-box">
-            <div style="color:#888; font-size:11px; text-transform:uppercase;">Bilancio Storico</div>
-            <div id="personBalance" class="stat-num" style="color:var(--primary);">€ 0</div>
+            <div class="balance-row">
+                <span class="balance-label">Ha Fatto (Speso)</span>
+                <span id="personSentVal" class="balance-val text-red">€ 0</span>
+            </div>
+            <div class="balance-row">
+                <span class="balance-label">Ha Ricevuto (Valore)</span>
+                <span id="personRecvVal" class="balance-val text-blue">€ 0</span>
+            </div>
         </div>
-        <div style="margin-top:15px; display:flex; gap:10px;">
+        <div style="margin-top:20px; display:flex; gap:10px;">
             <button class="btn-secondary" onclick="window.togglePersonView('fatti')" style="background:#FF9A9E; color:white;">🎁 Fatti da...</button>
             <button class="btn-secondary" onclick="window.togglePersonView('ricevuti')" style="background:#a18cd1; color:white;">📥 Ricevuti da...</button>
         </div>
@@ -188,10 +193,14 @@
         <h2>Opzioni</h2>
         <div class="card">
             <h3>🏷️ Tag</h3>
-            <div id="tagsList" style="margin-bottom:10px;"></div>
+            <p style="color:#888; font-size:12px;">Tag Regali:</p>
+            <div id="tagsList" style="margin-bottom:10px; min-height:20px;"></div>
             <button onclick="window.promptAddTag('gift')" style="padding:10px; width:100%;">+ Tag Regalo</button>
-            <hr style="margin:10px 0; border:0; border-top:1px dashed #ccc;">
-            <div id="peopleTagsList" style="margin-bottom:10px;"></div>
+            
+            <hr style="margin:15px 0; border:0; border-top:1px dashed #ccc;">
+            
+            <p style="color:#888; font-size:12px;">Tag Persone:</p>
+            <div id="peopleTagsList" style="margin-bottom:10px; min-height:20px;"></div>
             <button onclick="window.promptAddTag('person')" style="padding:10px; width:100%;">+ Tag Persona</button>
         </div>
         <div class="card">
