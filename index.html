@@ -4,11 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Gift Tracker</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="icon.png">
 </head>
 <body>
+
+    <div id="appLoader">
+        <div class="spinner"></div>
+        <p style="color:#666; font-size:12px; font-weight:bold; letter-spacing:1px;">CARICAMENTO...</p>
+    </div>
 
     <header id="mainHeader" class="hide-in-home">
         <button id="backBtn" class="back-btn hidden">←</button>
@@ -32,7 +38,7 @@
         <div class="modal-box">
             <h3>Aggiungi Persona</h3>
             <p style="color:#666; font-size:13px;">Scegli dalla rubrica:</p>
-            <input type="text" id="extraPersonInput" list="peopleDatalist" placeholder="Cerca..." autocomplete="off">
+            <input type="text" id="extraPersonInput" list="peopleDatalist" placeholder="Cerca o scrivi..." autocomplete="off">
             <input type="hidden" id="targetInputId">
             <button onclick="window.confirmAddSender()" style="width:100%; padding:12px; background:var(--primary); color:white; border:none; border-radius:10px; font-weight:bold;">Aggiungi</button>
             <button onclick="document.getElementById('addSenderModal').style.display='none'" style="margin-top:15px; background:none; border:none; color:#999;">Annulla</button>
@@ -102,6 +108,12 @@
             </div>
             <label>Tag Regalo</label>
             <select id="quickTag"></select>
+            <label>Foto</label>
+            <input type="file" id="quickFileInput" accept="image/*" onchange="window.handleFileSelect(event, 'quick')">
+            <input type="hidden" id="quickFileBase64">
+            <img id="quickImgPreview" class="img-preview" style="display:none">
+            <label>Note</label>
+            <textarea id="quickNotes" rows="2"></textarea>
             <div class="btn-group">
                 <button class="action-btn" onclick="window.handleQuickGift(false)">Salva</button>
                 <button class="btn-secondary" onclick="window.handleQuickGift(true)">Salva + Altro</button>
@@ -114,7 +126,7 @@
             <h2 id="detailEventName" style="margin:0;">...</h2>
             <p id="detailEventInfo" style="margin:5px 0 0 0; color:#888; font-size:12px;">...</p>
         </div>
-        <button class="action-btn" onclick="window.navTo('aggiungi_regalo')">+ Aggiungi Regalo</button>
+        <button class="action-btn" onclick="window.prepareNewGift()">+ Aggiungi Regalo</button>
         <h3 style="margin-top:20px;">Lista Regali</h3>
         <div id="giftsContainer" style="padding-bottom:50px;"></div>
     </div>
@@ -143,7 +155,7 @@
             <label>Tag</label>
             <select id="giftTag"></select>
             <label>Foto</label>
-            <input type="file" id="giftFileInput" accept="image/*" onchange="window.handleFileSelect(event)">
+            <input type="file" id="giftFileInput" accept="image/*" onchange="window.handleFileSelect(event, 'gift')">
             <input type="hidden" id="giftFileBase64">
             <img id="imgPreview" class="img-preview" style="display:none">
             <label>Note</label>
@@ -193,14 +205,10 @@
         <h2>Opzioni</h2>
         <div class="card">
             <h3>🏷️ Tag</h3>
-            <p style="color:#888; font-size:12px;">Tag Regali:</p>
-            <div id="tagsList" style="margin-bottom:10px; min-height:20px;"></div>
+            <div id="tagsList" style="margin-bottom:10px;"></div>
             <button onclick="window.promptAddTag('gift')" style="padding:10px; width:100%;">+ Tag Regalo</button>
-            
-            <hr style="margin:15px 0; border:0; border-top:1px dashed #ccc;">
-            
-            <p style="color:#888; font-size:12px;">Tag Persone:</p>
-            <div id="peopleTagsList" style="margin-bottom:10px; min-height:20px;"></div>
+            <hr style="margin:10px 0; border:0; border-top:1px dashed #ccc;">
+            <div id="peopleTagsList" style="margin-bottom:10px;"></div>
             <button onclick="window.promptAddTag('person')" style="padding:10px; width:100%;">+ Tag Persona</button>
         </div>
         <div class="card">
@@ -209,7 +217,8 @@
         </div>
         <div class="card">
             <h3>💾 Dati</h3>
-            <button onclick="window.exportData()" style="padding:10px; width:100%; margin-bottom:5px;">📥 Esporta Backup</button>
+            <button onclick="window.exportExcel()" style="padding:10px; width:100%; margin-bottom:5px; background: #27ae60; color:white; border:none; border-radius:10px; font-weight:bold;">📊 Esporta Excel Completo</button>
+            <button onclick="window.exportData()" style="padding:10px; width:100%; margin-bottom:5px;">📥 Backup JSON</button>
             <button onclick="document.getElementById('importFile').click()" style="padding:10px; width:100%;">📤 Ripristina</button>
             <input type="file" id="importFile" style="display:none" onchange="window.importData(event)" accept=".json">
         </div>
@@ -254,7 +263,6 @@
   storageBucket: "gifttracker-8a628.firebasestorage.app",
   messagingSenderId: "86139174948",
   appId: "1:86139174948:web:952a9dbbbbc5c0402158b1"
-
         };
         // ------------------------------------------------
 
